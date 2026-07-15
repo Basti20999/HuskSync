@@ -44,13 +44,6 @@ public class PaperEventListener extends BukkitEventListener {
     }
 
     @Override
-    @SuppressWarnings("RedundantMethodOverride")
-    public void onEnable() {
-        getPlugin().getServer().getPluginManager().registerEvents(this, getPlugin());
-        lockedHandler.onEnable();
-    }
-
-    @Override
     public void handlePlayerDeath(@NotNull PlayerDeathEvent event) {
         // If the player is locked or the plugin disabling, clear their drops
         final OnlineUser user = BukkitUser.adapt(event.getEntity(), plugin);

@@ -41,7 +41,6 @@ import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.jetbrains.annotations.NotNull;
@@ -426,7 +425,10 @@ public abstract class BukkitData implements Data {
                 final org.bukkit.Location location = new org.bukkit.Location(
                         Bukkit.getWorld(world.name()), x, y, z, yaw, pitch
                 );
-                user.getPlayer().teleport(location);
+                // Use an async teleport: on Folia/Canvas a synchronous teleport across regions (or to an unloaded
+                // chunk) is unsupported and throws; teleportAsync loads the target chunk and hops regions safely.
+                // This also works as a normal teleport on Paper/Spigot
+                user.getPlayer().teleportAsync(location);
             } catch (Throwable e) {
                 throw new IllegalStateException("Failed to apply location", e);
             }
@@ -598,12 +600,12 @@ public abstract class BukkitData implements Data {
 
         @NotNull
         public static BukkitData.Attributes adapt(@NotNull Player player, @NotNull HuskSync plugin) {
-            if (!Bukkit.isPrimaryThread()) {
-                try {
-                    return Bukkit.getScheduler().callSyncMethod((Plugin) plugin, () -> adapt(player, plugin)).get();
-                } catch (Exception e) {
-                    throw new IllegalStateException("Failed to adapt attributes on main thread", e);
-                }
+            // On Folia/Canvas, check we own the player's region (on Paper/Spigot: that we're on the main thread);
+            // if not, hop to the player's region thread. The legacy main-thread scheduler is unavailable there.
+            if (!Bukkit.isOwnedByCurrentRegion(player)) {
+                return ((BukkitHuskSync) plugin).supplyOnUserSync(
+                        BukkitUser.adapt(player, plugin), () -> adapt(player, plugin)
+                );
             }
 
             final List<Attribute> attributes = Lists.newArrayList();
@@ -679,16 +681,10 @@ public abstract class BukkitData implements Data {
 
         @Override
         public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
-            if (!Bukkit.isPrimaryThread()) {
-                try {
-                    Bukkit.getScheduler().callSyncMethod(plugin, () -> {
-                        this.apply(user, plugin);
-                        return null;
-                    }).get();
-                    return;
-                } catch (Exception e) {
-                    throw new IllegalStateException("Failed to apply attributes on main thread", e);
-                }
+            if (!Bukkit.isOwnedByCurrentRegion(user.getPlayer())) {
+                // Apply attributes on the player's region thread (Folia/Canvas-safe)
+                plugin.runOnUserSync(user, () -> this.apply(user, plugin));
+                return;
             }
 
             final AttributeSettings settings = plugin.getSettings().getSynchronization().getAttributes();
@@ -749,13 +745,10 @@ public abstract class BukkitData implements Data {
         @Override
         @SuppressWarnings("deprecation")
         public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
-            if (!Bukkit.isPrimaryThread()) {
-                try {
-                    Bukkit.getScheduler().callSyncMethod(plugin, () -> { this.apply(user, plugin); return null; }).get();
-                    return;
-                } catch (Exception e) {
-                    throw new IllegalStateException("Failed to apply health on main thread", e);
-                }
+            if (!Bukkit.isOwnedByCurrentRegion(user.getPlayer())) {
+                // Apply health on the player's region thread (Folia/Canvas-safe)
+                plugin.runOnUserSync(user, () -> this.apply(user, plugin));
+                return;
             }
             final Player player = user.getPlayer();
 

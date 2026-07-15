@@ -22,6 +22,7 @@ package net.william278.husksync.listener;
 import lombok.Getter;
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.data.BukkitData;
+import net.william278.husksync.data.DataSnapshot;
 import net.william278.husksync.user.BukkitUser;
 import net.william278.husksync.user.OnlineUser;
 import org.bukkit.entity.Player;
@@ -43,6 +44,9 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
 
     protected LockedHandler lockedHandler;
 
+    // Whether CanvasMC's per-player PlayerSaveEvent is driving periodic saves (replaces WorldSaveEvent on Canvas)
+    private boolean canvasSaveActive;
+
     public BukkitEventListener(@NotNull BukkitHuskSync plugin) {
         super(plugin);
     }
@@ -53,6 +57,7 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
 
     public void onEnable() {
         getPlugin().getServer().getPluginManager().registerEvents(this, getPlugin());
+        this.canvasSaveActive = new CanvasEventListener(getPlugin()).register();
         lockedHandler.onEnable();
     }
 
@@ -122,7 +127,33 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
 
     @EventHandler(ignoreCancelled = true)
     public void onWorldSave(@NotNull WorldSaveEvent event) {
-        if (!plugin.getSettings().getSynchronization().isSaveOnWorldSave()) {
+        if (plugin.isDisabling() || !plugin.getSettings().getSynchronization().isSaveOnWorldSave()) {
+            return;
+        }
+
+        // On Canvas, per-player PlayerSaveEvent handling already covers periodic saves; avoid saving players twice
+        if (canvasSaveActive) {
+            return;
+        }
+
+        // On Folia, players can't be snapshot from the async pool; snapshot each player on their own region
+        // thread, then persist the immutable snapshot to the database/Redis off-thread
+        if (getPlugin().getScheduler().isUsingFolia()) {
+            event.getWorld().getPlayers().forEach(player -> {
+                final BukkitUser user = BukkitUser.adapt(player, plugin);
+                if (user.isNpc() || user.hasDisconnected() || plugin.isLocked(user.getUuid())) {
+                    return;
+                }
+                plugin.runSync(() -> {
+                    if (user.hasDisconnected() || plugin.isLocked(user.getUuid())) {
+                        return;
+                    }
+                    final DataSnapshot.Packed snapshot = user.createSnapshot(DataSnapshot.SaveCause.WORLD_SAVE);
+                    plugin.runAsync(() -> plugin.getDataSyncer().saveData(
+                            user, snapshot, (u, data) -> plugin.getRedisManager().setUserData(u, data)
+                    ));
+                }, user);
+            });
             return;
         }
 

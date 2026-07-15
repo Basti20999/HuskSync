@@ -64,6 +64,7 @@ import net.william278.toilet.Toilet;
 import net.william278.uniform.Uniform;
 import net.william278.uniform.bukkit.BukkitUniform;
 import org.bstats.bukkit.Metrics;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.map.MapView;
 import org.bukkit.plugin.Plugin;
@@ -77,6 +78,9 @@ import space.arim.morepaperlib.scheduling.RegionalScheduler;
 
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -385,6 +389,67 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @NotNull
     public AttachedScheduler getUserSyncScheduler(@NotNull UserDataHolder user) {
         return getScheduler().entitySpecificScheduler(((BukkitUser) user).getPlayer());
+    }
+
+    /**
+     * Runs the given {@link Supplier} on the region thread that owns the user's player entity, blocking the calling
+     * thread until it produces a result.
+     * <p>
+     * This is the Folia/Canvas-safe replacement for {@code Bukkit.getScheduler().callSyncMethod(...)}, which throws
+     * {@link UnsupportedOperationException} on regionised servers. If the current thread already owns the player
+     * (the main thread on Paper/Spigot; the player's region thread on Folia/Canvas), the supplier is run inline;
+     * otherwise it is dispatched to the player's {@link AttachedScheduler entity scheduler}. Should the player
+     * entity have already been retired (e.g. mid-disconnect) the supplier is run on the calling thread as a
+     * best-effort fallback, mirroring the behaviour on non-regionised platforms.
+     *
+     * @param user     the user whose region thread the supplier should run on
+     * @param supplier the value to compute on the player's region thread
+     * @param <T>      the type of value produced
+     * @return the value produced by the supplier
+     */
+    public <T> T supplyOnUserSync(@NotNull UserDataHolder user, @NotNull Supplier<T> supplier) {
+        // On Folia/Canvas this checks region ownership; on Paper/Spigot it is equivalent to isPrimaryThread()
+        if (Bukkit.isOwnedByCurrentRegion(((BukkitUser) user).getPlayer())) {
+            return supplier.get();
+        }
+
+        // If the plugin is disabling, schedulers will no longer run tasks; ticking has (or is about to) stop,
+        // so run inline rather than blocking on a task that would never complete (cf. BukkitTask#isPluginDisabled)
+        if (!isEnabled() || isDisabling()) {
+            return supplier.get();
+        }
+        final CompletableFuture<T> future = new CompletableFuture<>();
+        final Runnable task = () -> {
+            try {
+                future.complete(supplier.get());
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+        // The second argument runs on the calling thread if the entity has been retired, so the future always completes
+        getUserSyncScheduler(user).run(task, task);
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while awaiting a task on the user's region thread", e);
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("Failed to run task on the user's region thread", e.getCause());
+        }
+    }
+
+    /**
+     * Runs the given {@link Runnable} on the region thread that owns the user's player entity, blocking until complete.
+     *
+     * @param user     the user whose region thread the task should run on
+     * @param runnable the task to run
+     * @see #supplyOnUserSync(UserDataHolder, Supplier)
+     */
+    public void runOnUserSync(@NotNull UserDataHolder user, @NotNull Runnable runnable) {
+        supplyOnUserSync(user, () -> {
+            runnable.run();
+            return null;
+        });
     }
 
     @Override
