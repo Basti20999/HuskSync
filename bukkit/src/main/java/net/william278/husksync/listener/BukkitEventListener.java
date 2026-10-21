@@ -31,6 +31,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.server.MapInitializeEvent;
 import org.bukkit.event.world.WorldSaveEvent;
 import org.bukkit.inventory.ItemStack;
@@ -43,6 +44,7 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
         BukkitDeathEventListener, Listener {
 
     protected LockedHandler lockedHandler;
+    private volatile boolean lateQuitListenerRegistered;
 
     // Whether CanvasMC's per-player PlayerSaveEvent is driving periodic saves (replaces WorldSaveEvent on Canvas)
     private boolean canvasSaveActive;
@@ -59,6 +61,22 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
         getPlugin().getServer().getPluginManager().registerEvents(this, getPlugin());
         this.canvasSaveActive = new CanvasEventListener(getPlugin()).register();
         lockedHandler.onEnable();
+        registerLateQuitListener();
+    }
+
+    // Register a "late quit" listener on the next tick, after other plugins have registered their listeners
+    protected final void registerLateQuitListener() {
+        getPlugin().runSync(() -> {
+            getPlugin().getServer().getPluginManager().registerEvent(PlayerQuitEvent.class, new Listener() {
+            }, EventPriority.MONITOR, (listener, event) -> handlePlayerQuitMonitor(
+                    BukkitUser.adapt(((PlayerQuitEvent) event).getPlayer(), getPlugin())), getPlugin(), true);
+            lateQuitListenerRegistered = true;
+        });
+    }
+
+    @Override
+    public boolean isLateQuitListenerRegistered() {
+        return lateQuitListenerRegistered;
     }
 
     public void handlePluginDisable() {
@@ -95,6 +113,11 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
             plugin.debug("Dropped " + itemOnCursor + " for " + player.getName() + " on quit");
         }
         super.handlePlayerQuit(bukkitUser);
+    }
+
+    @Override
+    public void saveOnPlayerQuit(@NotNull BukkitUser bukkitUser) {
+        super.saveOnPlayerQuit(bukkitUser);
     }
 
     @Override
@@ -158,9 +181,9 @@ public class BukkitEventListener extends EventListener implements BukkitJoinEven
         }
 
         // Handle saving player data snapshots when the world saves
-        plugin.runAsync(() -> super.saveOnWorldSave(event.getWorld().getPlayers()
+        super.saveOnWorldSave(event.getWorld().getPlayers()
                 .stream().map(player -> BukkitUser.adapt(player, plugin))
-                .collect(Collectors.toList())));
+                .collect(Collectors.toList()));
     }
 
     @EventHandler(ignoreCancelled = true)

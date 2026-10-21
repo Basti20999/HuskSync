@@ -48,7 +48,11 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Range;
 import org.jetbrains.annotations.Unmodifiable;
 
+import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -596,18 +600,62 @@ public abstract class BukkitData implements Data {
     @SuppressWarnings("UnstableApiUsage")
     public static class Attributes extends BukkitData implements Data.Attributes, Adaptable {
 
+        // Folia's entity scheduler (and Paper's Folia-compatible equivalent) never run tasks inline, even
+        // from the thread that already owns the entity. Recursing into it while blocked on its own future
+        // would therefore hang forever and trip the server watchdog. Cached as it's checked on every call.
+        @Nullable
+        private static final Method IS_OWNED_BY_CURRENT_REGION = findIsOwnedByCurrentRegionMethod();
+
         private List<Attribute> attributes;
+
+        @Nullable
+        private static Method findIsOwnedByCurrentRegionMethod() {
+            try {
+                return Server.class.getMethod("isOwnedByCurrentRegion", org.bukkit.entity.Entity.class);
+            } catch (NoSuchMethodException e) {
+                return null;
+            }
+        }
+
+        // Whether the calling thread already owns and is permitted to tick the player
+        // Runs on main thread on Spigot/Paper, or the owning region's thread on Folia
+        private static boolean isUserOnCallingThread(@NotNull Player player) {
+            if (IS_OWNED_BY_CURRENT_REGION == null) {
+                return Bukkit.isPrimaryThread();
+            }
+            try {
+                return (boolean) IS_OWNED_BY_CURRENT_REGION.invoke(Bukkit.getServer(), player);
+            } catch (ReflectiveOperationException e) {
+                return Bukkit.isPrimaryThread();
+            }
+        }
 
         @NotNull
         public static BukkitData.Attributes adapt(@NotNull Player player, @NotNull HuskSync plugin) {
-            // On Folia/Canvas, check we own the player's region (on Paper/Spigot: that we're on the main thread);
-            // if not, hop to the player's region thread. The legacy main-thread scheduler is unavailable there.
-            if (!Bukkit.isOwnedByCurrentRegion(player)) {
-                return ((BukkitHuskSync) plugin).supplyOnUserSync(
-                        BukkitUser.adapt(player, plugin), () -> adapt(player, plugin)
-                );
+            if (isUserOnCallingThread(player)) {
+                return collectAttributes(player, plugin);
             }
 
+            final CompletableFuture<BukkitData.Attributes> future = new CompletableFuture<>();
+            plugin.runSync(() -> {
+                try {
+                    future.complete(collectAttributes(player, plugin));
+                } catch (Throwable e) {
+                    future.completeExceptionally(e);
+                }
+            }, BukkitUser.adapt(player, plugin)); // Necessary to ensure it is run on the player's scheduler
+
+            try {
+                return future.get(5, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                throw new IllegalStateException("Timed out adapting attributes for " + player.getName(), e);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to adapt attributes for " + player.getName(), e);
+            }
+        }
+
+        @NotNull
+        private static BukkitData.Attributes collectAttributes(@NotNull Player player, @NotNull HuskSync plugin) {
             final List<Attribute> attributes = Lists.newArrayList();
             final AttributeSettings settings = plugin.getSettings().getSynchronization().getAttributes();
             Registry.ATTRIBUTE.forEach(id -> {
@@ -679,14 +727,7 @@ public abstract class BukkitData implements Data {
             );
         }
 
-        @Override
-        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
-            if (!Bukkit.isOwnedByCurrentRegion(user.getPlayer())) {
-                // Apply attributes on the player's region thread (Folia/Canvas-safe)
-                plugin.runOnUserSync(user, () -> this.apply(user, plugin));
-                return;
-            }
-
+        private void applyAttributes(@NotNull BukkitUser user, @NotNull HuskSync plugin) {
             final AttributeSettings settings = plugin.getSettings().getSynchronization().getAttributes();
             Registry.ATTRIBUTE.forEach(id -> {
                 if (settings.isIgnoredAttribute(id.getKey().toString())) {
@@ -694,6 +735,34 @@ public abstract class BukkitData implements Data {
                 }
                 applyAttribute(user.getPlayer().getAttribute(id), getAttribute(id).orElse(null));
             });
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            // The apply loop calling this already runs on the player's owning thread - scheduling again
+            // here would be the exact hang described above.
+            if (isUserOnCallingThread(user.getPlayer())) {
+                applyAttributes(user, plugin);
+                return;
+            }
+
+            final CompletableFuture<Void> future = new CompletableFuture<>();
+            plugin.runSync(() -> {
+                try {
+                    applyAttributes(user, plugin);
+                    future.complete(null);
+                } catch (Throwable e) {
+                    future.completeExceptionally(e);
+                }
+            }, user);
+
+            try {
+                future.get(5, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                throw new IllegalStateException("Timed out applying attributes for " + user.getPlayer().getName(), e);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to apply attributes for " + user.getPlayer().getName(), e);
+            }
         }
 
     }
