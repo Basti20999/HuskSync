@@ -145,7 +145,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
 
     @Override
     public void onEnable() {
-        this.audiences = BukkitAudiences.create(this);
+        this.audiences = createAudiences();
         this.toilet = BukkitToilet.create(getDumpOptions());
 
         // Check compatibility
@@ -266,6 +266,12 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @NotNull
     protected BukkitEventListener createEventListener() {
         return new BukkitEventListener(this);
+    }
+
+    // Spigot doesn't support Adventure natively, so uses the (shaded) adventure-platform-bukkit audiences
+    @NotNull
+    protected AudienceProvider createAudiences() {
+        return BukkitAudiences.create(this);
     }
 
     @Override

@@ -32,7 +32,7 @@ import net.william278.desertwell.util.Version;
 import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.adapter.DataAdapter;
-import org.apache.commons.text.WordUtils;
+import net.william278.husksync.config.Locales;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -321,6 +321,7 @@ public class DataSnapshot {
             this.pinned = data.isPinned();
             this.saveCause = data.getSaveCause().name();
             this.data = data.serializeData(plugin);
+            this.minecraftVersion = plugin.getMinecraftVersion().toStringWithoutMetadata();
         }
 
         /**
@@ -457,9 +458,10 @@ public class DataSnapshot {
         @NotNull
         @ApiStatus.Internal
         public DataSnapshot.Packed pack(@NotNull HuskSync plugin) {
+            // Serialized on this server, so it's labelled with this server's version (as in Packed#edit)
             return new DataSnapshot.Packed(
                     id, pinned, timestamp, saveCause, serverName, serializeData(plugin),
-                    getMinecraftVersion(), platformType, formatVersion
+                    plugin.getMinecraftVersion(), platformType, formatVersion
             );
         }
 
@@ -842,7 +844,7 @@ public class DataSnapshot {
          */
         @NotNull
         default String getDisplayName() {
-            return WordUtils.capitalizeFully(name().replaceAll("_", " "));
+            return Locales.capitalizeFully(name().replaceAll("_", " "));
         }
 
     }

@@ -48,17 +48,17 @@ HuskSync supports the following [compatible versions](https://william278.net/doc
 
 |    Minecraft    | Latest HuskSync | Java Version | Platforms     | Support Status                |
 |:---------------:|:---------------:|:------------:|:--------------|:------------------------------|
-|     26.3      |    _latest_     |      25      | Paper         | ✅ **Active Release**        |
-|     26.2      |       4.1.0     |      25      | Paper         | ✅ **December 2026**         |
-|     26.1.2    |       4.1.0     |      25      | Paper         | ✅ **December 2026**         |
-|     1.21.11   |      4.1.0      |      21      | Paper         | ✅ **December 2026**         |
-|     1.21.10   |      4.1.0      |      21      | Paper         | ✅ **December 2026**         |
-|    1.21.7/8   |      3.8.7      |      21      | Paper, Fabric | 🗃️ Archived (August 2026)    |
+|     26.3      |    _latest_     |      25      | Paper, Fabric | ✅ **Active Release**        |
+|     26.2      |       4.2.0     |      25      | Paper, Fabric | ✅ **December 2026**         |
+|     26.1.2    |       4.2.0     |      25      | Paper, Fabric | ✅ **December 2026**         |
+|     1.21.11   |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
+|    1.21.9/10  |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
+|    1.21.7/8   |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
 |     1.21.6    |      3.8.5      |      21      | Paper         | 🗃️ Archived (July 2025)      |
-|     1.21.5    |      3.8.7      |      21      | Paper         | 🗃️ Archived (June 2026)      |
-|     1.21.4    |      3.8.7      |      21      | Paper, Fabric | 🗃️ Archived (June 2026)      |
+|     1.21.5    |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
+|     1.21.4    |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
 |     1.21.3    |      3.7.1      |      21      | Paper, Fabric | 🗃️ Archived (December 2024)  |
-|     1.21.1    |      3.8.7      |      21      | Paper, Fabric | 🗃️ Archived (June 2026)      |
+|     1.21.1    |      4.2.0      |      21      | Paper, Fabric | ✅ **December 2026**         |
 |     1.20.6    |      3.6.8      |      17      | Paper         | 🗃️ Archived (October 2024)   |
 |     1.20.4    |      3.6.8      |      17      | Paper         | 🗃️ Archived (July 2024)      |
 |     1.20.1    |      3.8.7      |      17      | Paper, Fabric | 🗃️ Archived (November 2024)  |
@@ -107,7 +107,7 @@ Translations of the plugin locales are welcome to help make the plugin more acce
 
 ## Links
 - [Docs](https://william278.net/docs/husksync/) &mdash; Read the plugin documentation!
-- [Spigot](https://www.spigotmc.org/resources/husksync.97144/) &mdash; View the Spigot resource page (Also: [Polymart](https://polymart.org/resource/husksync.1634), [Craftaro](https://craftaro.com/marketplace/product/husksync.758), [BuiltByBit](https://builtbybit.com/resources/husksync.34956/))
+- [Spigot](https://www.spigotmc.org/resources/husksync.97144/) &mdash; View the Spigot resource page (Also: [BuiltByBit](https://builtbybit.com/resources/husksync.34956/) and [voxel.shop](https://voxel.shop/product/1634/husksync))
 - [Issues](https://github.com/WiIIiam278/HuskSync/issues) &mdash; File a bug report or feature request
 - [Discord](https://discord.gg/tVYhJfyDWG) &mdash; Get help, ask questions (Purchase required)
 - [bStats](https://bstats.org/plugin/bukkit/HuskSync%20-%20Bukkit/13140) &mdash; View plugin metrics
